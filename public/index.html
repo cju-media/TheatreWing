@@ -148,14 +148,24 @@
         }
 
         // --- UI DRAW ENGINE ---
+        function dropCharacter(event, sceneId) {
+            event.preventDefault();
+            if (!document.body.classList.contains('edit-mode')) return;
+            const charId = event.dataTransfer.getData('text/plain');
+            if (charId && sceneId) {
+                addActorToScene(sceneId, charId);
+            }
+        }
+
         function renderUI() {
+            const isEditMode = document.body.classList.contains('edit-mode');
             // Render Bank
             const bankPool = document.getElementById('characterBankPool');
             bankPool.innerHTML = '';
             Object.keys(state.characters).forEach(id => {
                 const char = state.characters[id];
                 bankPool.innerHTML += `
-                    <div class="bank-item">
+                    <div class="bank-item" draggable="${isEditMode ? 'true' : 'false'}" ondragstart="event.dataTransfer.setData('text/plain', '${id}')">
                         <div>
                             <strong>${char.name}</strong> <br>
                             <small style="color:var(--accent)">CH ${char.channel}</small>
@@ -177,8 +187,29 @@
             // Sort scenes numerically so float values (1.5) index perfectly between integers
             state.scenes.sort((a, b) => a.id - b.id);
 
-            state.scenes.forEach(scene => {
+            let scenesToRender = state.scenes;
+            if (!isEditMode) {
+                let currentIndex = state.scenes.findIndex(s => s.id === activeSceneId);
+                if (currentIndex === -1) currentIndex = 0;
+                const currentScene = state.scenes[currentIndex];
+                const nextScene = state.scenes[currentIndex + 1];
+                scenesToRender = [];
+                if (currentScene) scenesToRender.push(currentScene);
+                if (nextScene) scenesToRender.push(nextScene);
+            }
+
+            scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
+
+                let sceneLabel = `Act ${scene.id}`;
+                if (!isEditMode) {
+                    if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
+                        sceneLabel = `Current (Act ${scene.id})`;
+                    } else {
+                        sceneLabel = `Next (Act ${scene.id})`;
+                    }
+                }
+
                 let actorRows = '';
                 
                 scene.actors.forEach(charId => {
@@ -195,9 +226,9 @@
                 });
 
                 grid.innerHTML += `
-                    <div class="scene-card ${isActive ? 'active' : ''}">
+                    <div class="scene-card ${isActive ? 'active' : ''}" ondragover="event.preventDefault();" ondrop="dropCharacter(event, '${scene.id}')">
                         <div class="scene-header">
-                            <span>Act ${scene.id}</span>
+                            <span>${sceneLabel}</span>
                             <button class="delete-btn edit-only" onclick="deleteScene('${scene.id}')">Del</button>
                         </div>
                         <div class="scene-body">
@@ -289,6 +320,28 @@
 
             renderUI();
         }
+
+        // Arrow key navigation
+        window.addEventListener('keydown', (e) => {
+            const isEditMode = document.body.classList.contains('edit-mode');
+            if (isEditMode) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            state.scenes.sort((a, b) => a.id - b.id);
+            let currentIndex = state.scenes.findIndex(s => s.id === activeSceneId);
+
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                if (currentIndex === -1) {
+                    if (state.scenes.length > 0) fireScene(state.scenes[0].id);
+                } else if (currentIndex < state.scenes.length - 1) {
+                    fireScene(state.scenes[currentIndex + 1].id);
+                }
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                if (currentIndex > 0) {
+                    fireScene(state.scenes[currentIndex - 1].id);
+                }
+            }
+        });
 
         // Boot Init Execution
         renderUI();
