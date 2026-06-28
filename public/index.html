@@ -56,12 +56,12 @@
         }
         
         /* Scenes Layout */
-        .scenes-grid { display: flex; flex-direction: column; gap: 20px; overflow-y: auto; padding-bottom: 10px; max-height: 80vh; }
+        .scenes-grid { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-bottom: 10px; max-height: 80vh; }
         .scene-card {
-            background: var(--panel); min-width: 260px; max-width: 260px; border-radius: 8px; 
-            border: 2px solid #333; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s;
+            background: var(--panel); border-radius: 8px; width: 100%;
+            border: 2px solid #333; display: flex; flex-direction: column; transition: border-color 0.2s;
         }
-        .scene-card.active { border-color: var(--accent-green); transform: scale(1.02); background: #17251f; }
+        .scene-card.active { border-color: var(--accent-green); background: #17251f; }
         .scene-header { background: var(--panel-header); padding: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .scene-body { padding: 10px; flex-grow: 1; min-height: 200px; }
 
@@ -200,15 +200,6 @@
             state.scenes.sort((a, b) => a.id - b.id);
 
             let scenesToRender = state.scenes;
-            if (!isEditMode) {
-                let currentIndex = state.scenes.findIndex(s => s.id === activeSceneId);
-                if (currentIndex === -1) currentIndex = 0;
-                const currentScene = state.scenes[currentIndex];
-                const nextScene = state.scenes[currentIndex + 1];
-                scenesToRender = [];
-                if (currentScene) scenesToRender.push(currentScene);
-                if (nextScene) scenesToRender.push(nextScene);
-            }
 
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
@@ -217,8 +208,6 @@
                 if (!isEditMode) {
                     if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
                         sceneLabel = `Current (Act ${scene.id})`;
-                    } else {
-                        sceneLabel = `Next (Act ${scene.id})`;
                     }
                 }
 
@@ -271,6 +260,7 @@
         function toggleEditMode() {
             document.body.classList.toggle('edit-mode');
             renderUI();
+
         }
 
         function addCharacterToBank() {
@@ -317,7 +307,10 @@
 
         function removeActorFromScene(sceneId, charId) {
             const scene = state.scenes.find(s => String(s.id) === String(sceneId));
-            if(scene) scene.actors = scene.actors.filter(id => id !== charId);
+            if(scene) {
+                scene.actors = scene.actors.filter(id => id !== charId);
+                if (scene.dcas) delete scene.dcas[charId];
+            }
             renderUI();
         }
 
@@ -361,6 +354,14 @@
             });
 
             renderUI();
+
+            // Scroll to the active scene
+            setTimeout(() => {
+                const activeCard = document.querySelector('.scene-card.active');
+                if (activeCard) {
+                    activeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 50);
         }
 
         // Arrow key navigation
