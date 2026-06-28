@@ -28,7 +28,8 @@
         .badge.connected { background: var(--accent-green); }
         
         /* App Layout */
-        .workspace { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+        .workspace { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        body.edit-mode .workspace { grid-template-columns: 300px 1fr; }
         .panel { background: var(--panel); border-radius: 8px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .panel h3 { margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
         
@@ -55,7 +56,7 @@
         }
         
         /* Scenes Layout */
-        .scenes-grid { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 10px; }
+        .scenes-grid { display: flex; flex-direction: column; gap: 20px; overflow-y: auto; padding-bottom: 10px; max-height: 80vh; }
         .scene-card {
             background: var(--panel); min-width: 260px; max-width: 260px; border-radius: 8px; 
             border: 2px solid #333; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s;
@@ -81,7 +82,7 @@
     </header>
 
     <div class="workspace">
-        <div class="panel">
+        <div class="panel edit-only" id="characterBankSidebar">
             <h3>👥 Character Bank</h3>
             
             <div class="edit-controls">
@@ -114,7 +115,7 @@
         // --- APPLICATION STATE ---
         let state = {
             characters: {}, // ID: { name, channel }
-            scenes: []      // Array of { id: float/int, name: string, actors: [charIds] }
+            scenes: []      // Array of { id: float/int, name: string, actors: [charIds], dcas: {charId: dcaIndex} }
         };
         let activeSceneId = null;
 
@@ -125,9 +126,9 @@
             "c3": { name: "Eliza", channel: 3 }
         };
         state.scenes = [
-            { id: 1.0, name: "The Aaron Burr, Sir", actors: ["c1", "c2"] },
-            { id: 1.5, name: "Eliza Enters", actors: ["c1", "c2", "c3"] },
-            { id: 2.0, name: "My Shot", actors: ["c1", "c2"] }
+            { id: 1.0, name: "The Aaron Burr, Sir", actors: ["c1", "c2"], dcas: {} },
+            { id: 1.5, name: "Eliza Enters", actors: ["c1", "c2", "c3"], dcas: {} },
+            { id: 2.0, name: "My Shot", actors: ["c1", "c2"], dcas: {} }
         ];
 
         // --- WEBSOCKET BRIDGE ---
@@ -143,6 +144,17 @@
                 type: 'OSC_CMD',
                 address: `/ch/${formattedChannel}/on`,
                 args: [{ type: 'i', value: value }]
+            };
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+        }
+
+        function sendOscDca(channel, dcaGroup) {
+            if (!dcaGroup) return; // Unassign is maybe 0?
+            const formattedChannel = String(channel).padStart(2, '0');
+            const payload = {
+                type: 'OSC_CMD',
+                address: `/ch/${formattedChannel}/dca`,
+                args: [{ type: 'i', value: parseInt(dcaGroup) }]
             };
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
         }
@@ -215,10 +227,23 @@
                 scene.actors.forEach(charId => {
                     const actor = state.characters[charId];
                     if (!actor) return; // Handle orphaned IDs if deleted
+
+                    // Fallback to older scenes missing the dcas object
+                    if (!scene.dcas) scene.dcas = {};
+                    const dcaAssignment = scene.dcas[charId];
+                    let dcaDisplay = dcaAssignment ? `DCA ${dcaAssignment}` : 'No DCA';
+
                     actorRows += `
                         <div class="scene-actor-row">
                             <span>${actor.name}</span>
-                            <span>
+                            <span style="display:flex; align-items:center; gap: 8px;">
+                                <span class="edit-only">
+                                    <select style="padding:2px; font-size:0.8em;" onchange="updateCharacterDca('${scene.id}', '${charId}', this.value)">
+                                        <option value="">No DCA</option>
+                                        ${[1,2,3,4,5,6,7,8].map(i => `<option value="${i}" ${dcaAssignment == i ? 'selected' : ''}>DCA ${i}</option>`).join('')}
+                                    </select>
+                                </span>
+                                <span class="badge" style="background:#5f27cd;">${dcaDisplay}</span>
                                 <small style="color:#888">CH ${actor.channel}</small>
                                 <button class="delete-btn edit-only" style="padding:1px 4px; font-size:0.7em;" onclick="removeActorFromScene('${scene.id}', '${charId}')">x</button>
                             </span>
@@ -266,7 +291,7 @@
             if(isNaN(id) || !name) return alert("Requires Valid Float ID & Title Name!");
             if(state.scenes.some(s => s.id === id)) return alert("Scene float value already exists!");
 
-            state.scenes.push({ id, name, actors: [] });
+            state.scenes.push({ id, name, actors: [], dcas: {} });
             document.getElementById('newSceneId').value = '';
             document.getElementById('newSceneName').value = '';
             renderUI();
@@ -277,6 +302,15 @@
             const scene = state.scenes.find(s => String(s.id) === String(sceneId));
             if(scene && !scene.actors.includes(charId)) {
                 scene.actors.push(charId);
+            }
+            renderUI();
+        }
+
+        function updateCharacterDca(sceneId, charId, dcaValue) {
+            const scene = state.scenes.find(s => String(s.id) === String(sceneId));
+            if(scene) {
+                if (!scene.dcas) scene.dcas = {};
+                scene.dcas[charId] = dcaValue;
             }
             renderUI();
         }
@@ -308,6 +342,14 @@
 
             // Gather active channels for this scene
             const activeChannels = targetScene.actors.map(cid => state.characters[cid]?.channel).filter(Boolean);
+
+            // Apply DCA changes for this scene
+            if (!targetScene.dcas) targetScene.dcas = {};
+            Object.entries(targetScene.dcas).forEach(([charId, dcaValue]) => {
+                if (dcaValue && state.characters[charId]) {
+                    sendOscDca(state.characters[charId].channel, dcaValue);
+                }
+            });
 
             // Command Loop: Unmute characters inside this scene, Mute any bank characters that aren't
             Object.values(state.characters).forEach(char => {
