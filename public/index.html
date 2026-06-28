@@ -65,9 +65,10 @@
         .scene-header { background: var(--panel-header); padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .scene-body { padding: 5px 10px; flex-grow: 1; min-height: auto; }
 
+        .scene-actors-container { display: flex; flex-wrap: wrap; gap: 5px; }
         .scene-actor-row {
-            background: #252525; padding: 6px; margin: 4px 0; border-radius: 4px;
-            display: flex; justify-content: space-between; font-size: 0.9em;
+            background: #252525; padding: 4px 8px; border-radius: 4px;
+            display: inline-flex; align-items: center; gap: 8px; font-size: 0.85em;
         }
     </style>
 </head>
@@ -204,10 +205,10 @@
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
 
-                let sceneLabel = `scene ${scene.id}`;
+                let sceneLabel = `Scene ${scene.id}`;
                 if (!isEditMode) {
                     if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
-                        sceneLabel = `Current (scene ${scene.id})`;
+                        sceneLabel = `Current (Scene ${scene.id})`;
                     }
                 }
 
@@ -246,8 +247,8 @@
                             <button class="delete-btn edit-only" onclick="deleteScene('${scene.id}')">Del</button>
                         </div>
                         <div class="scene-body">
-                            <h4 style="margin:0 0 10px 0; color:var(--accent);">${scene.name}</h4>
-                            <div>${actorRows}</div>
+                            <h4 style="margin:0 0 5px 0; font-size: 1em; color:var(--accent);">${scene.name}</h4>
+                            <div class="scene-actors-container">${actorRows}</div>
                         </div>
                         <div style="padding:5px 10px; background:#222; border-top:1px solid #333;">
                             <button class="fire-btn" onclick="fireScene('${scene.id}')">${isActive ? '⚡ LIVE' : 'GO Scene'}</button>
