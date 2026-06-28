@@ -28,7 +28,8 @@
         .badge.connected { background: var(--accent-green); }
         
         /* App Layout */
-        .workspace { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+        .workspace { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        body.edit-mode .workspace { grid-template-columns: 300px 1fr; }
         .panel { background: var(--panel); border-radius: 8px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .panel h3 { margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
         
@@ -55,14 +56,14 @@
         }
         
         /* Scenes Layout */
-        .scenes-grid { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 10px; }
+        .scenes-grid { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-bottom: 10px; max-height: 80vh; }
         .scene-card {
-            background: var(--panel); min-width: 260px; max-width: 260px; border-radius: 8px; 
-            border: 2px solid #333; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s;
+            background: var(--panel); border-radius: 8px; width: 100%;
+            border: 2px solid #333; display: flex; flex-direction: column; transition: border-color 0.2s;
         }
-        .scene-card.active { border-color: var(--accent-green); transform: scale(1.02); background: #17251f; }
-        .scene-header { background: var(--panel-header); padding: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .scene-body { padding: 10px; flex-grow: 1; min-height: 200px; }
+        .scene-card.active { border-color: var(--accent-green); background: #17251f; }
+        .scene-header { background: var(--panel-header); padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .scene-body { padding: 5px 10px; flex-grow: 1; min-height: auto; }
 
         .scene-actor-row {
             background: #252525; padding: 6px; margin: 4px 0; border-radius: 4px;
@@ -81,7 +82,7 @@
     </header>
 
     <div class="workspace">
-        <div class="panel">
+        <div class="panel edit-only" id="characterBankSidebar">
             <h3>👥 Character Bank</h3>
             
             <div class="edit-controls">
@@ -114,7 +115,7 @@
         // --- APPLICATION STATE ---
         let state = {
             characters: {}, // ID: { name, channel }
-            scenes: []      // Array of { id: float/int, name: string, actors: [charIds] }
+            scenes: []      // Array of { id: float/int, name: string, actors: [charIds], dcas: {charId: dcaIndex} }
         };
         let activeSceneId = null;
 
@@ -125,9 +126,9 @@
             "c3": { name: "Eliza", channel: 3 }
         };
         state.scenes = [
-            { id: 1.0, name: "The Aaron Burr, Sir", actors: ["c1", "c2"] },
-            { id: 1.5, name: "Eliza Enters", actors: ["c1", "c2", "c3"] },
-            { id: 2.0, name: "My Shot", actors: ["c1", "c2"] }
+            { id: 1.0, name: "The Aaron Burr, Sir", actors: ["c1", "c2"], dcas: {} },
+            { id: 1.5, name: "Eliza Enters", actors: ["c1", "c2", "c3"], dcas: {} },
+            { id: 2.0, name: "My Shot", actors: ["c1", "c2"], dcas: {} }
         ];
 
         // --- WEBSOCKET BRIDGE ---
@@ -143,6 +144,17 @@
                 type: 'OSC_CMD',
                 address: `/ch/${formattedChannel}/on`,
                 args: [{ type: 'i', value: value }]
+            };
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+        }
+
+        function sendOscDca(channel, dcaGroup) {
+            if (!dcaGroup) return; // Unassign is maybe 0?
+            const formattedChannel = String(channel).padStart(2, '0');
+            const payload = {
+                type: 'OSC_CMD',
+                address: `/ch/${formattedChannel}/dca`,
+                args: [{ type: 'i', value: parseInt(dcaGroup) }]
             };
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
         }
@@ -188,25 +200,14 @@
             state.scenes.sort((a, b) => a.id - b.id);
 
             let scenesToRender = state.scenes;
-            if (!isEditMode) {
-                let currentIndex = state.scenes.findIndex(s => s.id === activeSceneId);
-                if (currentIndex === -1) currentIndex = 0;
-                const currentScene = state.scenes[currentIndex];
-                const nextScene = state.scenes[currentIndex + 1];
-                scenesToRender = [];
-                if (currentScene) scenesToRender.push(currentScene);
-                if (nextScene) scenesToRender.push(nextScene);
-            }
 
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
 
-                let sceneLabel = `Act ${scene.id}`;
+                let sceneLabel = `scene ${scene.id}`;
                 if (!isEditMode) {
                     if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
-                        sceneLabel = `Current (Act ${scene.id})`;
-                    } else {
-                        sceneLabel = `Next (Act ${scene.id})`;
+                        sceneLabel = `Current (scene ${scene.id})`;
                     }
                 }
 
@@ -215,10 +216,23 @@
                 scene.actors.forEach(charId => {
                     const actor = state.characters[charId];
                     if (!actor) return; // Handle orphaned IDs if deleted
+
+                    // Fallback to older scenes missing the dcas object
+                    if (!scene.dcas) scene.dcas = {};
+                    const dcaAssignment = scene.dcas[charId];
+                    let dcaDisplay = dcaAssignment ? `DCA ${dcaAssignment}` : 'No DCA';
+
                     actorRows += `
                         <div class="scene-actor-row">
                             <span>${actor.name}</span>
-                            <span>
+                            <span style="display:flex; align-items:center; gap: 8px;">
+                                <span class="edit-only">
+                                    <select style="padding:2px; font-size:0.8em;" onchange="updateCharacterDca('${scene.id}', '${charId}', this.value)">
+                                        <option value="">No DCA</option>
+                                        ${[1,2,3,4,5,6,7,8].map(i => `<option value="${i}" ${dcaAssignment == i ? 'selected' : ''}>DCA ${i}</option>`).join('')}
+                                    </select>
+                                </span>
+                                <span class="badge" style="background:#5f27cd;">${dcaDisplay}</span>
                                 <small style="color:#888">CH ${actor.channel}</small>
                                 <button class="delete-btn edit-only" style="padding:1px 4px; font-size:0.7em;" onclick="removeActorFromScene('${scene.id}', '${charId}')">x</button>
                             </span>
@@ -235,7 +249,7 @@
                             <h4 style="margin:0 0 10px 0; color:var(--accent);">${scene.name}</h4>
                             <div>${actorRows}</div>
                         </div>
-                        <div style="padding:10px; background:#222; border-top:1px solid #333;">
+                        <div style="padding:5px 10px; background:#222; border-top:1px solid #333;">
                             <button class="fire-btn" onclick="fireScene('${scene.id}')">${isActive ? '⚡ LIVE' : 'GO Scene'}</button>
                         </div>
                     </div>`;
@@ -246,6 +260,7 @@
         function toggleEditMode() {
             document.body.classList.toggle('edit-mode');
             renderUI();
+
         }
 
         function addCharacterToBank() {
@@ -266,7 +281,7 @@
             if(isNaN(id) || !name) return alert("Requires Valid Float ID & Title Name!");
             if(state.scenes.some(s => s.id === id)) return alert("Scene float value already exists!");
 
-            state.scenes.push({ id, name, actors: [] });
+            state.scenes.push({ id, name, actors: [], dcas: {} });
             document.getElementById('newSceneId').value = '';
             document.getElementById('newSceneName').value = '';
             renderUI();
@@ -281,9 +296,21 @@
             renderUI();
         }
 
+        function updateCharacterDca(sceneId, charId, dcaValue) {
+            const scene = state.scenes.find(s => String(s.id) === String(sceneId));
+            if(scene) {
+                if (!scene.dcas) scene.dcas = {};
+                scene.dcas[charId] = dcaValue;
+            }
+            renderUI();
+        }
+
         function removeActorFromScene(sceneId, charId) {
             const scene = state.scenes.find(s => String(s.id) === String(sceneId));
-            if(scene) scene.actors = scene.actors.filter(id => id !== charId);
+            if(scene) {
+                scene.actors = scene.actors.filter(id => id !== charId);
+                if (scene.dcas) delete scene.dcas[charId];
+            }
             renderUI();
         }
 
@@ -309,6 +336,14 @@
             // Gather active channels for this scene
             const activeChannels = targetScene.actors.map(cid => state.characters[cid]?.channel).filter(Boolean);
 
+            // Apply DCA changes for this scene
+            if (!targetScene.dcas) targetScene.dcas = {};
+            Object.entries(targetScene.dcas).forEach(([charId, dcaValue]) => {
+                if (dcaValue && state.characters[charId]) {
+                    sendOscDca(state.characters[charId].channel, dcaValue);
+                }
+            });
+
             // Command Loop: Unmute characters inside this scene, Mute any bank characters that aren't
             Object.values(state.characters).forEach(char => {
                 if (activeChannels.includes(char.channel)) {
@@ -319,6 +354,14 @@
             });
 
             renderUI();
+
+            // Scroll to the active scene
+            setTimeout(() => {
+                const activeCard = document.querySelector('.scene-card.active');
+                if (activeCard) {
+                    activeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 50);
         }
 
         // Arrow key navigation
