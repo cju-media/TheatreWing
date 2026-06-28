@@ -62,8 +62,8 @@
             border: 2px solid #333; display: flex; flex-direction: column; transition: border-color 0.2s;
         }
         .scene-card.active { border-color: var(--accent-green); background: #17251f; }
-        .scene-header { background: var(--panel-header); padding: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .scene-body { padding: 10px; flex-grow: 1; min-height: 200px; }
+        .scene-header { background: var(--panel-header); padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .scene-body { padding: 5px 10px; flex-grow: 1; min-height: auto; }
 
         .scene-actor-row {
             background: #252525; padding: 6px; margin: 4px 0; border-radius: 4px;
@@ -204,10 +204,10 @@
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
 
-                let sceneLabel = `Act ${scene.id}`;
+                let sceneLabel = `scene ${scene.id}`;
                 if (!isEditMode) {
                     if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
-                        sceneLabel = `Current (Act ${scene.id})`;
+                        sceneLabel = `Current (scene ${scene.id})`;
                     }
                 }
 
@@ -249,7 +249,7 @@
                             <h4 style="margin:0 0 10px 0; color:var(--accent);">${scene.name}</h4>
                             <div>${actorRows}</div>
                         </div>
-                        <div style="padding:10px; background:#222; border-top:1px solid #333;">
+                        <div style="padding:5px 10px; background:#222; border-top:1px solid #333;">
                             <button class="fire-btn" onclick="fireScene('${scene.id}')">${isActive ? '⚡ LIVE' : 'GO Scene'}</button>
                         </div>
                     </div>`;
