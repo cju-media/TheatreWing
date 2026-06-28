@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WING Theater Director</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --panel: #1e1e1e;
+            --panel-header: #2d2d2d;
+            --accent: #ff9f43;
+            --accent-green: #10ac84;
+            --text: #f5f6fa;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0; padding: 20px;
+        }
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--panel-header); padding-bottom: 15px; margin-bottom: 20px;
+        }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
+        .badge.disconnected { background: #ee5253; }
+        .badge.connected { background: var(--accent-green); }
+        
+        /* App Layout */
+        .workspace { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+        .panel { background: var(--panel); border-radius: 8px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .panel h3 { margin-top: 0; padding-bottom: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+        
+        /* Configuration/Edit Panels */
+        .edit-controls { display: none; background: #2a2a2a; padding: 15px; border-radius: 6px; margin-bottom: 15px; gap: 10px; flex-direction: column; }
+        body.edit-mode .edit-controls { display: flex; }
+        body.edit-mode .edit-only { display: inline-block; }
+        .edit-only { display: none; }
+
+        input, select, button {
+            background: #333; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; font-size: 0.9em;
+        }
+        button { background: var(--accent); color: #000; font-weight: bold; cursor: pointer; border: none; }
+        button:hover { opacity: 0.9; }
+        button.mode-toggle { background: #5f27cd; color: white; }
+        button.fire-btn { background: var(--accent-green); color: white; width: 100%; margin-top: 10px; }
+        button.delete-btn { background: #ee5253; color: white; padding: 2px 6px; font-size: 0.8em; }
+
+        /* Character Items */
+        .bank-item {
+            background: #2d2d2d; padding: 10px; margin: 8px 0; border-radius: 6px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-left: 4px solid var(--accent);
+        }
+        
+        /* Scenes Layout */
+        .scenes-grid { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 10px; }
+        .scene-card {
+            background: var(--panel); min-width: 260px; max-width: 260px; border-radius: 8px; 
+            border: 2px solid #333; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s;
+        }
+        .scene-card.active { border-color: var(--accent-green); transform: scale(1.02); background: #17251f; }
+        .scene-header { background: var(--panel-header); padding: 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .scene-body { padding: 10px; flex-grow: 1; min-height: 200px; }
+
+        .scene-actor-row {
+            background: #252525; padding: 6px; margin: 4px 0; border-radius: 4px;
+            display: flex; justify-content: space-between; font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>🎭 WING Theater State Engine</h2>
+        <div>
+            <button class="mode-toggle" onclick="toggleEditMode()">⚙️ Toggle Edit Mode</button>
+            <span id="status" class="badge disconnected">Disconnected</span>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <div class="panel">
+            <h3>👥 Character Bank</h3>
+            
+            <div class="edit-controls">
+                <input type="text" id="newCharName" placeholder="Character Name">
+                <select id="newCharChan">
+                    <script>
+                        for(let i=1; i<=40; i++) document.write(`<option value="${i}">Channel ${i}</option>`);
+                    </script>
+                </select>
+                <button onclick="addCharacterToBank()">Add to Registry</button>
+            </div>
+
+            <div id="characterBankPool"></div>
+        </div>
+
+        <div class="panel">
+            <h3>🎬 Stage Scenes 
+                <span class="edit-only">
+                    <input type="number" step="0.1" id="newSceneId" placeholder="Scene ID (e.g. 1.5)" style="width: 130px;">
+                    <input type="text" id="newSceneName" placeholder="Scene Title">
+                    <button onclick="createNewScene()">+ Add Scene</button>
+                </span>
+            </h3>
+
+            <div class="scenes-grid" id="scenesGrid"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- APPLICATION STATE ---
+        let state = {
+            characters: {}, // ID: { name, channel }
+            scenes: []      // Array of { id: float/int, name: string, actors: [charIds] }
+        };
+        let activeSceneId = null;
+
+        // --- SEED INITIAL DATA ---
+        state.characters = {
+            "c1": { name: "Hamilton", channel: 1 },
+            "c2": { name: "Burr", channel: 2 },
+            "c3": { name: "Eliza", channel: 3 }
+        };
+        state.scenes = [
+            { id: 1.0, name: "The Aaron Burr, Sir", actors: ["c1", "c2"] },
+            { id: 1.5, name: "Eliza Enters", actors: ["c1", "c2", "c3"] },
+            { id: 2.0, name: "My Shot", actors: ["c1", "c2"] }
+        ];
+
+        // --- WEBSOCKET BRIDGE ---
+        const ws = new WebSocket(`ws://${window.location.host}`);
+        ws.onopen = () => { document.getElementById('status').className = 'badge connected'; document.getElementById('status').innerText = 'Connected to WING'; };
+        ws.onclose = () => { document.getElementById('status').className = 'badge disconnected'; document.getElementById('status').innerText = 'Disconnected'; };
+
+        function sendOscMute(channel, isMuted) {
+            const formattedChannel = String(channel).padStart(2, '0');
+            const value = isMuted ? 0 : 1; // WING Protocol: 1 = Unmuted (On), 0 = Muted (Off)
+            
+            const payload = {
+                type: 'OSC_CMD',
+                address: `/ch/${formattedChannel}/on`,
+                args: [{ type: 'i', value: value }]
+            };
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+        }
+
+        // --- UI DRAW ENGINE ---
+        function renderUI() {
+            // Render Bank
+            const bankPool = document.getElementById('characterBankPool');
+            bankPool.innerHTML = '';
+            Object.keys(state.characters).forEach(id => {
+                const char = state.characters[id];
+                bankPool.innerHTML += `
+                    <div class="bank-item">
+                        <div>
+                            <strong>${char.name}</strong> <br>
+                            <small style="color:var(--accent)">CH ${char.channel}</small>
+                        </div>
+                        <div class="edit-only">
+                            <select onchange="addActorToScene(this.value, '${id}')" style="padding:2px; font-size:0.8em;">
+                                <option value="">+ Add to...</option>
+                                ${state.scenes.map(s => `<option value="${s.id}">Scene ${s.id}</option>`).join('')}
+                            </select>
+                            <button class="delete-btn" onclick="deleteCharacter('${id}')">X</button>
+                        </div>
+                    </div>`;
+            });
+
+            // Render Scenes
+            const grid = document.getElementById('scenesGrid');
+            grid.innerHTML = '';
+            
+            // Sort scenes numerically so float values (1.5) index perfectly between integers
+            state.scenes.sort((a, b) => a.id - b.id);
+
+            state.scenes.forEach(scene => {
+                const isActive = activeSceneId === scene.id;
+                let actorRows = '';
+                
+                scene.actors.forEach(charId => {
+                    const actor = state.characters[charId];
+                    if (!actor) return; // Handle orphaned IDs if deleted
+                    actorRows += `
+                        <div class="scene-actor-row">
+                            <span>${actor.name}</span>
+                            <span>
+                                <small style="color:#888">CH ${actor.channel}</small>
+                                <button class="delete-btn edit-only" style="padding:1px 4px; font-size:0.7em;" onclick="removeActorFromScene('${scene.id}', '${charId}')">x</button>
+                            </span>
+                        </div>`;
+                });
+
+                grid.innerHTML += `
+                    <div class="scene-card ${isActive ? 'active' : ''}">
+                        <div class="scene-header">
+                            <span>Act ${scene.id}</span>
+                            <button class="delete-btn edit-only" onclick="deleteScene('${scene.id}')">Del</button>
+                        </div>
+                        <div class="scene-body">
+                            <h4 style="margin:0 0 10px 0; color:var(--accent);">${scene.name}</h4>
+                            <div>${actorRows}</div>
+                        </div>
+                        <div style="padding:10px; background:#222; border-top:1px solid #333;">
+                            <button class="fire-btn" onclick="fireScene('${scene.id}')">${isActive ? '⚡ LIVE' : 'GO Scene'}</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        // --- CONTROL LAYER ---
+        function toggleEditMode() {
+            document.body.classList.toggle('edit-mode');
+            renderUI();
+        }
+
+        function addCharacterToBank() {
+            const name = document.getElementById('newCharName').value.trim();
+            const chan = parseInt(document.getElementById('newCharChan').value);
+            if(!name) return;
+
+            const id = 'c_' + Date.now();
+            state.characters[id] = { name, channel: chan };
+            document.getElementById('newCharName').value = '';
+            renderUI();
+        }
+
+        function createNewScene() {
+            const id = parseFloat(document.getElementById('newSceneId').value);
+            const name = document.getElementById('newSceneName').value.trim();
+            
+            if(isNaN(id) || !name) return alert("Requires Valid Float ID & Title Name!");
+            if(state.scenes.some(s => s.id === id)) return alert("Scene float value already exists!");
+
+            state.scenes.push({ id, name, actors: [] });
+            document.getElementById('newSceneId').value = '';
+            document.getElementById('newSceneName').value = '';
+            renderUI();
+        }
+
+        function addActorToScene(sceneId, charId) {
+            if (!sceneId) return;
+            const scene = state.scenes.find(s => String(s.id) === String(sceneId));
+            if(scene && !scene.actors.includes(charId)) {
+                scene.actors.push(charId);
+            }
+            renderUI();
+        }
+
+        function removeActorFromScene(sceneId, charId) {
+            const scene = state.scenes.find(s => String(s.id) === String(sceneId));
+            if(scene) scene.actors = scene.actors.filter(id => id !== charId);
+            renderUI();
+        }
+
+        function deleteCharacter(id) {
+            delete state.characters[id];
+            state.scenes.forEach(s => s.actors = s.actors.filter(cid => cid !== id));
+            renderUI();
+        }
+
+        function deleteScene(id) {
+            state.scenes = state.scenes.filter(s => String(s.id) !== String(id));
+            renderUI();
+        }
+
+        // --- THE "GO" BUTTON ---
+        // Fires the scene assignments directly into physical console layers
+        function fireScene(sceneId) {
+            activeSceneId = parseFloat(sceneId);
+            const targetScene = state.scenes.find(s => s.id === activeSceneId);
+            
+            if(!targetScene) return;
+
+            // Gather active channels for this scene
+            const activeChannels = targetScene.actors.map(cid => state.characters[cid]?.channel).filter(Boolean);
+
+            // Command Loop: Unmute characters inside this scene, Mute any bank characters that aren't
+            Object.values(state.characters).forEach(char => {
+                if (activeChannels.includes(char.channel)) {
+                    sendOscMute(char.channel, false); // Active / Unmuted
+                } else {
+                    sendOscMute(char.channel, true);  // Muted
+                }
+            });
+
+            renderUI();
+        }
+
+        // Boot Init Execution
+        renderUI();
+    </script>
+</body>
+</html>
