@@ -205,10 +205,10 @@
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
 
-                let sceneLabel = `Scene ${scene.id}`;
+                let sceneLabel = `${scene.id}. ${scene.name}`;
                 if (!isEditMode) {
                     if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
-                        sceneLabel = `Current (Scene ${scene.id})`;
+                        sceneLabel = `Current (${scene.id}. ${scene.name})`;
                     }
                 }
 
@@ -247,7 +247,7 @@
                             <button class="delete-btn edit-only" onclick="deleteScene('${scene.id}')">Del</button>
                         </div>
                         <div class="scene-body">
-                            <h4 style="margin:0 0 5px 0; font-size: 1em; color:var(--accent);">${scene.name}</h4>
+
                             <div class="scene-actors-container">${actorRows}</div>
                         </div>
                         <div style="padding:5px 10px; background:#222; border-top:1px solid #333;">
