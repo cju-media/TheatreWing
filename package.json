@@ -2,10 +2,11 @@
   "name": "theatrewing",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "electron .",
+    "build": "electron-builder build --mac"
   },
   "keywords": [],
   "author": "",
@@ -15,5 +16,19 @@
     "express": "^5.2.1",
     "node-osc": "^11.6.0",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.theatrewing.app",
+    "productName": "TheatreWing",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    }
   }
 }

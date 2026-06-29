@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WING Theater Director</title>
+    <title>TheatreWing</title>
     <style>
         :root {
             --bg: #121212;
@@ -65,17 +65,20 @@
         .scene-header { background: var(--panel-header); padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .scene-body { padding: 5px 10px; flex-grow: 1; min-height: auto; }
 
+        .scene-actors-container { display: flex; flex-wrap: wrap; gap: 5px; }
         .scene-actor-row {
-            background: #252525; padding: 6px; margin: 4px 0; border-radius: 4px;
-            display: flex; justify-content: space-between; font-size: 0.9em;
+            background: #252525; padding: 4px 8px; border-radius: 4px;
+            display: inline-flex; align-items: center; gap: 8px; font-size: 0.85em;
         }
     </style>
 </head>
 <body>
 
     <header>
-        <h2>🎭 WING Theater State Engine</h2>
-        <div>
+        <h2>🎭 TheatreWing</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button onclick="saveShowPrompt()" style="background: #10ac84;">💾 Save Show</button>
+            <button onclick="loadShowPrompt()" style="background: #341f97;">📂 Load Show</button>
             <button class="mode-toggle" onclick="toggleEditMode()">⚙️ Toggle Edit Mode</button>
             <span id="status" class="badge disconnected">Disconnected</span>
         </div>
@@ -200,16 +203,20 @@
             state.scenes.sort((a, b) => a.id - b.id);
 
             let scenesToRender = state.scenes;
+            if (!isEditMode) {
+                let currentIndex = state.scenes.findIndex(s => s.id === activeSceneId);
+                if (currentIndex === -1) currentIndex = 0;
+                const currentScene = state.scenes[currentIndex];
+                const nextScene = state.scenes[currentIndex + 1];
+                scenesToRender = [];
+                if (currentScene) scenesToRender.push(currentScene);
+                if (nextScene) scenesToRender.push(nextScene);
+            }
 
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
 
-                let sceneLabel = `scene ${scene.id}`;
-                if (!isEditMode) {
-                    if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
-                        sceneLabel = `Current (scene ${scene.id})`;
-                    }
-                }
+                let sceneLabel = `${scene.id}. ${scene.name}`;
 
                 let actorRows = '';
                 
@@ -246,14 +253,62 @@
                             <button class="delete-btn edit-only" onclick="deleteScene('${scene.id}')">Del</button>
                         </div>
                         <div class="scene-body">
-                            <h4 style="margin:0 0 10px 0; color:var(--accent);">${scene.name}</h4>
-                            <div>${actorRows}</div>
+
+                            <div class="scene-actors-container">${actorRows}</div>
                         </div>
                         <div style="padding:5px 10px; background:#222; border-top:1px solid #333;">
                             <button class="fire-btn" onclick="fireScene('${scene.id}')">${isActive ? '⚡ LIVE' : 'GO Scene'}</button>
                         </div>
                     </div>`;
             });
+        }
+
+        // --- SAVE / LOAD SHOW ---
+        async function saveShowPrompt() {
+            const path = prompt("Enter absolute file path to save the show (e.g., /path/to/show.json):");
+            if (!path) return;
+            try {
+                const res = await fetch('/api/save-show', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path, state })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert("Show saved successfully.");
+                } else {
+                    alert("Error saving show: " + data.message);
+                }
+            } catch (e) {
+                alert("Failed to save show.");
+            }
+        }
+
+        async function loadShowPrompt() {
+            const path = prompt("Enter absolute file path to load the show (e.g., /path/to/show.json):");
+            if (!path) return;
+            try {
+                const res = await fetch('/api/load-show', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    if (data.state && data.state.characters && data.state.scenes) {
+                        state = data.state;
+                        activeSceneId = null;
+                        renderUI();
+                        alert("Show loaded successfully.");
+                    } else {
+                        alert("Invalid show file format.");
+                    }
+                } else {
+                    alert("Error loading show: " + data.message);
+                }
+            } catch (e) {
+                alert("Failed to load show.");
+            }
         }
 
         // --- CONTROL LAYER ---
@@ -387,7 +442,19 @@
         });
 
         // Boot Init Execution
-        renderUI();
+        async function boot() {
+            try {
+                const res = await fetch('/api/last-show');
+                const data = await res.json();
+                if (data.success && data.state && data.state.characters && data.state.scenes) {
+                    state = data.state;
+                }
+            } catch (e) {
+                console.error("Failed to fetch last show", e);
+            }
+            renderUI();
+        }
+        boot();
     </script>
 </body>
 </html>
