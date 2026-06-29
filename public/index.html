@@ -99,6 +99,11 @@
             </div>
 
             <div id="characterBankPool"></div>
+
+            <div class="edit-controls" style="margin-top:20px;">
+                <h4 style="margin:0;">Safe DCAs (Do Not Use)</h4>
+                <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:0.85em;" id="safeDcasPool"></div>
+            </div>
         </div>
 
         <div class="panel">
@@ -118,7 +123,8 @@
         // --- APPLICATION STATE ---
         let state = {
             characters: {}, // ID: { name, channel }
-            scenes: []      // Array of { id: float/int, name: string, actors: [charIds], dcas: {charId: dcaIndex} }
+            scenes: [],     // Array of { id: float/int, name: string, actors: [charIds], dcas: {charId: dcaIndex} }
+            safeDCAs: []    // Array of ints (1-16)
         };
         let activeSceneId = null;
 
@@ -139,6 +145,17 @@
         ws.onopen = () => { document.getElementById('status').className = 'badge connected'; document.getElementById('status').innerText = 'Connected to WING'; };
         ws.onclose = () => { document.getElementById('status').className = 'badge disconnected'; document.getElementById('status').innerText = 'Disconnected'; };
 
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'FIRE_SCENE') {
+                    fireScene(data.id);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
         function sendOscMute(channel, isMuted) {
             const formattedChannel = String(channel).padStart(2, '0');
             const value = isMuted ? 0 : 1; // WING Protocol: 1 = Unmuted (On), 0 = Muted (Off)
@@ -152,14 +169,28 @@
         }
 
         function sendOscDca(channel, dcaGroup) {
-            if (!dcaGroup) return; // Unassign is maybe 0?
+            if (!dcaGroup) return;
             const formattedChannel = String(channel).padStart(2, '0');
-            const payload = {
-                type: 'OSC_CMD',
-                address: `/ch/${formattedChannel}/dca`,
-                args: [{ type: 'i', value: parseInt(dcaGroup) }]
-            };
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+            const targetDca = parseInt(dcaGroup);
+
+            // Turn off non-safe DCAs for this channel, turn on the target one
+            for (let i = 1; i <= 16; i++) {
+                if (state.safeDCAs && state.safeDCAs.includes(i) && i !== targetDca) {
+                    continue; // Skip safe DCAs
+                }
+                const value = (i === targetDca) ? 1 : 0;
+                const formattedDca = String(i).padStart(2, '0');
+                // The exact path varies slightly between X32 and WING, but usually /ch/XX/dca/YY
+                // Sometimes WING is just /ch/XX/dca/YY, or /ch/XX/group/dca/YY.
+                // Based on "Check your OSC outputs to ensure that it matches with wing OSC control formatting."
+                // I will use `/ch/${formattedChannel}/dca/${i}`
+                const payload = {
+                    type: 'OSC_CMD',
+                    address: `/ch/${formattedChannel}/dca/${i}`,
+                    args: [{ type: 'i', value: value }]
+                };
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+            }
         }
 
         // --- UI DRAW ENGINE ---
@@ -174,6 +205,22 @@
 
         function renderUI() {
             const isEditMode = document.body.classList.contains('edit-mode');
+            if (!state.safeDCAs) state.safeDCAs = [];
+
+            // Render Safe DCAs
+            const safeDcasPool = document.getElementById('safeDcasPool');
+            if (safeDcasPool) {
+                safeDcasPool.innerHTML = '';
+                for(let i=1; i<=16; i++) {
+                    const isSafe = state.safeDCAs.includes(i);
+                    safeDcasPool.innerHTML += `
+                        <label style="display:flex; align-items:center; gap:4px; ${isSafe ? 'color:var(--accent); font-weight:bold;' : ''}">
+                            <input type="checkbox" onchange="toggleSafeDca(${i})" ${isSafe ? 'checked' : ''}> DCA ${i}
+                        </label>
+                    `;
+                }
+            }
+
             // Render Bank
             const bankPool = document.getElementById('characterBankPool');
             bankPool.innerHTML = '';
@@ -227,7 +274,10 @@
                                 <span class="edit-only">
                                     <select style="padding:2px; font-size:0.8em;" onchange="updateCharacterDca('${scene.id}', '${charId}', this.value)">
                                         <option value="">No DCA</option>
-                                        ${[1,2,3,4,5,6,7,8].map(i => `<option value="${i}" ${dcaAssignment == i ? 'selected' : ''}>DCA ${i}</option>`).join('')}
+                                        ${[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+                                            .filter(i => (!state.safeDCAs || !state.safeDCAs.includes(i)) || dcaAssignment == i)
+                                            .map(i => `<option value="${i}" ${dcaAssignment == i ? 'selected' : ''}>DCA ${i}</option>`)
+                                            .join('')}
                                     </select>
                                 </span>
                                 <span class="badge" style="background:#5f27cd;">${dcaDisplay}</span>
@@ -301,6 +351,17 @@
         }
 
         // --- CONTROL LAYER ---
+        function toggleSafeDca(dcaId) {
+            dcaId = parseInt(dcaId);
+            if (!state.safeDCAs) state.safeDCAs = [];
+            if (state.safeDCAs.includes(dcaId)) {
+                state.safeDCAs = state.safeDCAs.filter(id => id !== dcaId);
+            } else {
+                state.safeDCAs.push(dcaId);
+            }
+            renderUI();
+        }
+
         function toggleEditMode() {
             document.body.classList.toggle('edit-mode');
             renderUI();
