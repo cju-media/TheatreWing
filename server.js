@@ -10,7 +10,7 @@ const wss = new WebSocket.Server({ server });
 
 const WING_IP = '192.168.1.100'; // Change to your WING IP
 const WING_PORT = 2223;
-const SERVER_PORT = 3000;
+const SERVER_PORT = 1476;
 
 const oscClient = new Client(WING_IP, WING_PORT);
 
