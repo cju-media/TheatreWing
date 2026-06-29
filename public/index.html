@@ -77,7 +77,7 @@
     <header>
         <h2>🎭 TheatreWing</h2>
         <div style="display: flex; gap: 10px; align-items: center;">
-            <button onclick="saveShowPrompt()" style="background: #10ac84;">💾 Save Show</button>
+            <button onclick="saveShow()" style="background: #10ac84;">💾 Save Show</button>
             <button onclick="loadShowPrompt()" style="background: #341f97;">📂 Load Show</button>
             <button class="mode-toggle" onclick="toggleEditMode()">⚙️ Toggle Edit Mode</button>
             <span id="status" class="badge disconnected">Disconnected</span>
@@ -203,15 +203,6 @@
             state.scenes.sort((a, b) => a.id - b.id);
 
             let scenesToRender = state.scenes;
-            if (!isEditMode) {
-                let currentIndex = state.scenes.findIndex(s => s.id === activeSceneId);
-                if (currentIndex === -1) currentIndex = 0;
-                const currentScene = state.scenes[currentIndex];
-                const nextScene = state.scenes[currentIndex + 1];
-                scenesToRender = [];
-                if (currentScene) scenesToRender.push(currentScene);
-                if (nextScene) scenesToRender.push(nextScene);
-            }
 
             scenesToRender.forEach((scene, index) => {
                 const isActive = activeSceneId === scene.id;
@@ -264,18 +255,16 @@
         }
 
         // --- SAVE / LOAD SHOW ---
-        async function saveShowPrompt() {
-            const path = prompt("Enter absolute file path to save the show (e.g., /path/to/show.json):");
-            if (!path) return;
+        async function saveShow() {
             try {
                 const res = await fetch('/api/save-show', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path, state })
+                    body: JSON.stringify({ state })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    alert("Show saved successfully.");
+                    alert("Show saved successfully to: " + data.path);
                 } else {
                     alert("Error saving show: " + data.message);
                 }

@@ -1,3 +1,5 @@
+const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const express = require('express');
 const http = require('http');
@@ -46,15 +48,23 @@ app.get('/api/last-show', (req, res) => {
 });
 
 app.post('/api/save-show', (req, res) => {
-    const { path, state } = req.body;
-    if (!path || !state) return res.status(400).json({ success: false, message: 'Missing path or state' });
+    const { state } = req.body;
+    if (!state) return res.status(400).json({ success: false, message: 'Missing state' });
 
     try {
-        fs.writeFileSync(path, JSON.stringify(state, null, 2));
+        const downloadsPath = path.join(os.homedir(), 'Downloads');
+        if (!fs.existsSync(downloadsPath)) {
+            fs.mkdirSync(downloadsPath, { recursive: true });
+        }
+
+        const savePath = path.join(downloadsPath, 'theatrewing_show.json');
+        fs.writeFileSync(savePath, JSON.stringify(state, null, 2));
+
         const config = getConfig();
-        config.lastShowPath = path;
+        config.lastShowPath = savePath;
         saveConfig(config);
-        res.json({ success: true });
+
+        res.json({ success: true, path: savePath });
     } catch (e) {
         res.status(500).json({ success: false, message: 'Failed to write file' });
     }
