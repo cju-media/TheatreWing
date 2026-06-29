@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WING Theater Director</title>
+    <title>TheatreWing</title>
     <style>
         :root {
             --bg: #121212;
@@ -75,8 +75,11 @@
 <body>
 
     <header>
-        <h2>🎭 WING Theater State Engine</h2>
-        <div>
+        <h2>🎭 TheatreWing</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button onclick="saveShow()" style="background: #10ac84;">💾 Save Show</button>
+            <button onclick="document.getElementById('fileInput').click()" style="background: #341f97;">📂 Load Show</button>
+            <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="loadShow(event)">
             <button class="mode-toggle" onclick="toggleEditMode()">⚙️ Toggle Edit Mode</button>
             <span id="status" class="badge disconnected">Disconnected</span>
         </div>
@@ -206,11 +209,6 @@
                 const isActive = activeSceneId === scene.id;
 
                 let sceneLabel = `${scene.id}. ${scene.name}`;
-                if (!isEditMode) {
-                    if (scene.id === activeSceneId || (activeSceneId === null && index === 0)) {
-                        sceneLabel = `Current (${scene.id}. ${scene.name})`;
-                    }
-                }
 
                 let actorRows = '';
                 
@@ -255,6 +253,40 @@
                         </div>
                     </div>`;
             });
+        }
+
+        // --- SAVE / LOAD SHOW ---
+        function saveShow() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "theatrewing_show.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function loadShow(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const loadedState = JSON.parse(e.target.result);
+                    if (loadedState.characters && loadedState.scenes) {
+                        state = loadedState;
+                        activeSceneId = null;
+                        renderUI();
+                    } else {
+                        alert("Invalid show file.");
+                    }
+                } catch (err) {
+                    alert("Error parsing JSON file.");
+                }
+            };
+            reader.readAsText(file);
+            // Reset input so the same file can be loaded again
+            event.target.value = '';
         }
 
         // --- CONTROL LAYER ---
